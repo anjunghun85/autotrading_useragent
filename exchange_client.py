@@ -432,8 +432,13 @@ class AgentExchangeClient:
                 ccxt_symbol = self._to_ccxt_symbol(symbol)
                 trades = await self.exchange.fetch_my_trades(ccxt_symbol, limit=limit)
                 return [
-                    {"execPrice": str(t["price"]), "execQty": str(t["amount"]),
-                     "execTime": str(int(t["timestamp"]))}
+                    {
+                        "execPrice": str(t["price"]),
+                        "execQty": str(t["amount"]),
+                        "execTime": str(int(t["timestamp"])),
+                        # ccxt "limit"/"market" → capitalize → "Limit"/"Market" (Bybit raw 포맷과 통일)
+                        "orderType": (t.get("type") or "").capitalize(),
+                    }
                     for t in trades
                 ]
         except Exception as e:

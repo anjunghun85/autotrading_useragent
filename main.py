@@ -176,13 +176,13 @@ async def _notify_position_closed(symbol: str):
     pnl_info = None
     detected_at_ms = int(time.time() * 1000)  # 포지션 청산 감지 시각
 
-    for attempt in range(4):
+    for attempt in range(6):
         try:
             candidate = await client.get_closed_pnl(symbol)
             if candidate:
                 created_time = int(candidate.get("createdTime", 0))
-                # 감지 시각 기준 60초 이내 데이터만 유효로 판단 (stale 데이터 제거)
-                if created_time > detected_at_ms - 60_000:
+                # 감지 시각 기준 120초 이내 데이터만 유효로 판단 (stale 데이터 제거)
+                if created_time > detected_at_ms - 120_000:
                     pnl_info = candidate
                     break
                 else:
@@ -192,8 +192,8 @@ async def _notify_position_closed(symbol: str):
                     )
         except Exception as e:
             logger.warning(f"[ManualDetect] closed_pnl 조회 실패 (attempt {attempt + 1}): {e}")
-        if attempt < 3:
-            await asyncio.sleep(3)
+        if attempt < 5:
+            await asyncio.sleep(5)
     if pnl_info:
         if pnl_info.get("avgExitPrice"):
             payload["exit_price"] = str(pnl_info["avgExitPrice"])
@@ -302,13 +302,32 @@ async def detect_manual_positions():
                     known = _known_positions[symbol]
                     prev_qty = float(known.get("contracts", 0) or 0)
 
-                    # 마지막 TP 체결로 포지션이 사라진 경우 → tp-filled 먼저 알림
+                    # SL vs TP 구분: recent fills의 orderType으로 판단
                     if prev_qty > 1e-9:
-                        logger.info(
-                            f"[ManualDetect] 포지션 소멸 (마지막 TP 체결 추정): {symbol} "
-                            f"qty {prev_qty} → 0"
-                        )
-                        await _notify_tp_filled(symbol, known, prev_qty, 0.0)
+                        is_tp_fill = False
+                        try:
+                            fills = await client.get_recent_fills(symbol, limit=3)
+                            if fills:
+                                latest = fills[0]
+                                order_type = latest.get("orderType", "")
+                                stop_order_type = latest.get("stopOrderType", "")
+                                # TP limit order: orderType="Limit", stopOrderType 없음
+                                # SL market order: orderType="Market" 또는 stopOrderType 있음
+                                is_tp_fill = (order_type == "Limit" and not stop_order_type)
+                        except Exception as e:
+                            logger.warning(f"[ManualDetect] fills 조회 실패, tp_filled 스킵: {e}")
+
+                        if is_tp_fill:
+                            logger.info(
+                                f"[ManualDetect] 포지션 소멸 (마지막 TP 체결): {symbol} "
+                                f"qty {prev_qty} → 0"
+                            )
+                            await _notify_tp_filled(symbol, known, prev_qty, 0.0)
+                        else:
+                            logger.info(
+                                f"[ManualDetect] 포지션 소멸 (SL/수동 청산): {symbol} "
+                                f"qty {prev_qty} → 0"
+                            )
 
                     logger.info(f"[ManualDetect] 포지션 청산 감지: {symbol}")
                     await _notify_position_closed(symbol)
