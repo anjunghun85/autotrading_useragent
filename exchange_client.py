@@ -286,7 +286,8 @@ class AgentExchangeClient:
             rounded_price = self.round_price(symbol, price)
             ccxt_symbol = self._to_ccxt_symbol(symbol)
             order = await self.exchange.create_order(
-                ccxt_symbol, "limit", side.lower(), float(rounded_qty), float(rounded_price)
+                ccxt_symbol, "limit", side.lower(), float(rounded_qty), float(rounded_price),
+                {"hedged": False}
             )
             order_id = order["id"]
             logger.info(f"Limit order placed: {side} {rounded_qty} {symbol} @ {rounded_price} (ID: {order_id})")
@@ -303,7 +304,7 @@ class AgentExchangeClient:
             ccxt_symbol = self._to_ccxt_symbol(symbol)
             order = await self.exchange.create_order(
                 ccxt_symbol, "limit", side.lower(), float(rounded_qty), float(rounded_price),
-                {"reduceOnly": True, "timeInForce": "GTC"}
+                {"reduceOnly": True, "timeInForce": "GTC", "hedged": False}
             )
             order_id = order["id"]
             logger.info(f"TP order placed: {side} {rounded_qty} {symbol} @ {rounded_price} (ID: {order_id})")
